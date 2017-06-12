@@ -9,21 +9,20 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.IntStream;
 
-/**
- * Created by ariel on 26/05/17.
- */
 public class Game {
     private IModel m_model;
     private Move lastMove;
     private Player[] players;
     private final static int PLAYER_1 = 0;
     private final static int PLAYER_2 = PLAYER_1 + 1;
-    private int currentPlayer;
+    private volatile int currentPlayer;
     private Lock gameLock;
     private Condition otherPlayerConnected;
     private Condition otherPlayerTurn;
     private ExecutorService runGame;
+    private boolean isGameStarted = false;
 
     public Game(IModel model) {
         m_model = model;
@@ -45,11 +44,14 @@ public class Game {
         gameLock.lock();
 
         SecureRandom sr = new SecureRandom();
-        currentPlayer = 0;//sr.nextInt(2);
+        currentPlayer = sr.nextInt(players.length);
 
         try {
             players[currentPlayer].setSuspended(false);
-            otherPlayerConnected.signal();
+            IntStream.range(0,players.length).forEach(
+                    nPlayer->runGame.execute(players[nPlayer])
+            );
+//            otherPlayerConnected.signal();
         }finally {
             gameLock.unlock();
         }
@@ -58,7 +60,6 @@ public class Game {
 
     public void makePlayer(int nPlayer,Socket socket){
         players[nPlayer] = new Player(this,socket,nPlayer);
-        runGame.execute(players[nPlayer]);
     }
 
     public boolean validateAndMove(int loc1, int loc2,int player) {
@@ -140,19 +141,6 @@ public class Game {
         public void run() {
             Properties prop = new Properties();
             try {
-                if (playerNumber == 0) {
-                    gameLock.lock();
-
-                    try {
-                        while (suspended) {
-                            otherPlayerConnected.await();
-                        }
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    } finally {
-                        gameLock.unlock();
-                    }
-                }
                 prop.clear();
                 prop.setProperty("msg", "opponent connect");
                 prop.setProperty("game start","true");
